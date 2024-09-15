@@ -43,16 +43,29 @@ jobs:
       - name: Create AWS EC2 Key Pair
         id: create_key_pair
         run: |
-          # Generate a key pair
+          # Generate a key pair and save it to a file
           aws ec2 create-key-pair --key-name MyDynamicKey --query 'KeyMaterial' --output text > MyDynamicKey.pem
           
           # Set correct permissions for the key file
           chmod 400 MyDynamicKey.pem
 
+          # Upload the key file as an artifact
+          echo "Key file generated and saved as MyDynamicKey.pem"
+
       - name: Provision AWS EC2 Instance
+        id: provision_instance
         run: |
           # Create EC2 instance using the newly created Key Pair
-          INSTANCE_ID=$(aws ec2 run-instances --image-id ami-0c55b159cbfafe1f0 --instance-type t2.micro --key-name MyDynamicKey --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyEC2Instance}]' --query 'Instances[0].InstanceId' --output text --region ${{ secrets.AWS_REGION }} --aws-access-key-id ${{ secrets.AWS_ACCESS_KEY_ID }} --aws-secret-access-key ${{ secrets.AWS_SECRET_ACCESS_KEY }})
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0c55b159cbfafe1f0 \
+            --instance-type t2.micro \
+            --key-name MyDynamicKey \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyEC2Instance}]' \
+            --query 'Instances[0].InstanceId' \
+            --output text \
+            --region ${{ secrets.AWS_REGION }} \
+            --aws-access-key-id ${{ secrets.AWS_ACCESS_KEY_ID }} \
+            --aws-secret-access-key ${{ secrets.AWS_SECRET_ACCESS_KEY }})
 
           # Wait until the instance is running
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region ${{ secrets.AWS_REGION }}
@@ -64,11 +77,15 @@ jobs:
           # Get public IP of the instance
           INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text --region ${{ secrets.AWS_REGION }})
 
+          echo "EC2 instance running at $INSTANCE_IP"
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$INSTANCE_IP" >> $GITHUB_ENV
+
       - name: Install Docker on EC2 Instance
         run: |
           # Install Docker using AWS Systems Manager (SSM) Run Command
           aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
+            --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
             --parameters commands="sudo apt-get update -y && sudo apt-get install docker.io -y" \
             --region ${{ secrets.AWS_REGION }}
@@ -77,7 +94,7 @@ jobs:
         run: |
           # Create the .env file with database credentials using SSM
           aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
+            --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
             --parameters commands="echo -e 'DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\nDATABASE_USERNAME=dev_db_fnum_user' > /home/ubuntu/.env" \
             --region ${{ secrets.AWS_REGION }}
@@ -86,7 +103,13 @@ jobs:
         run: |
           # Use SSM to pull and run the Docker image on the EC2 instance
           aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
+            --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
             --parameters commands="sudo docker pull solomon11/testing:latest && sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest" \
             --region ${{ secrets.AWS_REGION }}
+
+      - name: Upload Key Pair File
+        uses: actions/upload-artifact@v3
+        with:
+          name: MyDynamicKey
+          path: MyDynamicKey.pem
