@@ -13,5 +13,5 @@ public class Client {
     private String password;
     @Id
     @GeneratedValue( strategy = GenerationType.AUTO)
-    private String id;
+    private Long id;
 }
