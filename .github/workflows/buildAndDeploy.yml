@@ -43,19 +43,26 @@ jobs:
       - name: Create AWS EC2 Key Pair
         id: create_key_pair
         run: |
-          # Generate a key pair and save it to a file
+          set -e  # Exit on error
+          echo "Creating EC2 Key Pair..."
           aws ec2 create-key-pair --key-name MyDynamicKey --query 'KeyMaterial' --output text > MyDynamicKey.pem
+          if [ $? -ne 0 ]; then
+            echo "Failed to create EC2 key pair"
+            exit 1
+          fi
           
-          # Set correct permissions for the key file
           chmod 400 MyDynamicKey.pem
+          echo "Key pair generated and saved as MyDynamicKey.pem"
 
           # Upload the key file as an artifact
-          echo "Key file generated and saved as MyDynamicKey.pem"
+          echo "Uploading key file as artifact..."
+          echo "::set-output name=key-file-path::MyDynamicKey.pem"
 
       - name: Provision AWS EC2 Instance
         id: provision_instance
         run: |
-          # Create EC2 instance using the newly created Key Pair
+          set -e  # Exit on error
+          echo "Provisioning EC2 Instance..."
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ami-0c55b159cbfafe1f0 \
             --instance-type t2.micro \
@@ -67,14 +74,14 @@ jobs:
             --aws-access-key-id ${{ secrets.AWS_ACCESS_KEY_ID }} \
             --aws-secret-access-key ${{ secrets.AWS_SECRET_ACCESS_KEY }})
 
-          # Wait until the instance is running
-          aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region ${{ secrets.AWS_REGION }}
+          if [ $? -ne 0 ]; then
+            echo "Failed to provision EC2 instance"
+            exit 1
+          fi
 
-          # Allocate Elastic IP and associate it with the instance
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region ${{ secrets.AWS_REGION }}
           ALLOCATION_ID=$(aws ec2 allocate-address --query 'AllocationId' --output text --region ${{ secrets.AWS_REGION }})
           aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $ALLOCATION_ID --region ${{ secrets.AWS_REGION }}
-
-          # Get public IP of the instance
           INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text --region ${{ secrets.AWS_REGION }})
 
           echo "EC2 instance running at $INSTANCE_IP"
@@ -83,7 +90,8 @@ jobs:
 
       - name: Install Docker on EC2 Instance
         run: |
-          # Install Docker using AWS Systems Manager (SSM) Run Command
+          set -e  # Exit on error
+          echo "Installing Docker on EC2 Instance..."
           aws ssm send-command \
             --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
@@ -92,7 +100,8 @@ jobs:
 
       - name: Create .env file on EC2 Instance
         run: |
-          # Create the .env file with database credentials using SSM
+          set -e  # Exit on error
+          echo "Creating .env file on EC2 Instance..."
           aws ssm send-command \
             --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
@@ -101,7 +110,8 @@ jobs:
 
       - name: Run Docker Image on EC2 Instance
         run: |
-          # Use SSM to pull and run the Docker image on the EC2 instance
+          set -e  # Exit on error
+          echo "Running Docker Image on EC2 Instance..."
           aws ssm send-command \
             --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
