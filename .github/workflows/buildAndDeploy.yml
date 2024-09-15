@@ -40,6 +40,13 @@ jobs:
       - name: Push Docker image to Docker Hub
         run: docker push solomon11/testing:latest
 
+      - name: Configure AWS CLI
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
       - name: Create AWS EC2 Key Pair
         id: create_key_pair
         run: |
@@ -47,7 +54,7 @@ jobs:
           
           # Generate the key pair and save it to a file
           echo "Creating EC2 Key Pair..."
-          KEY_MATERIAL=$(aws ec2 create-key-pair --key-name MyDynamicKey --query 'KeyMaterial' --output text --region ${{ secrets.AWS_REGION }} --aws-access-key-id ${{ secrets.AWS_ACCESS_KEY_ID }} --aws-secret-access-key ${{ secrets.AWS_SECRET_ACCESS_KEY }})
+          KEY_MATERIAL=$(aws ec2 create-key-pair --key-name MyDynamicKey --query 'KeyMaterial' --output text)
           echo "$KEY_MATERIAL" > MyDynamicKey.pem
           
           # Set correct permissions for the key file
@@ -73,20 +80,17 @@ jobs:
             --key-name MyDynamicKey \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyEC2Instance}]' \
             --query 'Instances[0].InstanceId' \
-            --output text \
-            --region ${{ secrets.AWS_REGION }} \
-            --aws-access-key-id ${{ secrets.AWS_ACCESS_KEY_ID }} \
-            --aws-secret-access-key ${{ secrets.AWS_SECRET_ACCESS_KEY }})
+            --output text)
 
           # Wait until the instance is running
-          aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region ${{ secrets.AWS_REGION }}
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
 
           # Allocate Elastic IP and associate it with the instance
-          ALLOCATION_ID=$(aws ec2 allocate-address --query 'AllocationId' --output text --region ${{ secrets.AWS_REGION }})
-          aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $ALLOCATION_ID --region ${{ secrets.AWS_REGION }}
+          ALLOCATION_ID=$(aws ec2 allocate-address --query 'AllocationId' --output text)
+          aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $ALLOCATION_ID
 
           # Get public IP of the instance
-          INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text --region ${{ secrets.AWS_REGION }})
+          INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 
           echo "EC2 instance is running with IP: $INSTANCE_IP"
           echo "::set-output name=instance-ip::$INSTANCE_IP"
@@ -100,8 +104,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="sudo apt-get update -y && sudo apt-get install docker.io -y" \
-            --region ${{ secrets.AWS_REGION }}
+            --parameters commands="sudo apt-get update -y && sudo apt-get install docker.io -y"
 
       - name: Create .env file on EC2 Instance
         run: |
@@ -112,8 +115,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="echo -e 'DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\nDATABASE_USERNAME=dev_db_fnum_user' > /home/ubuntu/.env" \
-            --region ${{ secrets.AWS_REGION }}
+            --parameters commands="echo -e 'DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\nDATABASE_USERNAME=dev_db_fnum_user' > /home/ubuntu/.env"
 
       - name: Run Docker Image on EC2 Instance
         run: |
@@ -124,5 +126,4 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="sudo docker pull solomon11/testing:latest && sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest" \
-            --region ${{ secrets.AWS_REGION }}
+            --parameters commands="sudo docker pull solomon11/testing:latest && sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest"
