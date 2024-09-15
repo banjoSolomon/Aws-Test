@@ -88,5 +88,5 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="sudo docker pull solomon11/classwork:latest && sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/classwork:latest" \
+            --parameters commands="sudo docker pull solomon11/testing:latest && sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest" \
             --region ${{ secrets.AWS_REGION }}
