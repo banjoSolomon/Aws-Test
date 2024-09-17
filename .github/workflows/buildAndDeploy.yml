@@ -87,14 +87,14 @@ jobs:
           INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 
           echo "EC2 instance is running with IP: $INSTANCE_IP"
-          echo "::set-output name=instance-ip::$INSTANCE_IP"
+          echo "::set-output name=instance-id::$INSTANCE_ID"
 
       - name: Install Docker and SSM Agent on EC2 Instance
         run: |
           set -e  # Exit on error
 
           # Use SSM to install Docker and SSM Agent
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-ip }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
@@ -105,7 +105,7 @@ jobs:
           set -e  # Exit on error
 
           # Use SSM to create .env file with database credentials
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-ip }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
@@ -116,7 +116,7 @@ jobs:
           set -e  # Exit on error
 
           # Use SSM to pull and run the Docker image
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-ip }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
