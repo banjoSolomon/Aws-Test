@@ -98,7 +98,7 @@ jobs:
           set -e  # Exit on error
 
           # Use SSM to install Docker
-          INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
@@ -109,18 +109,18 @@ jobs:
           set -e  # Exit on error
 
           # Use SSM to create .env file with database credentials
-          INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="echo -e 'DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\nDATABASE_USERNAME=dev_db_fnum_user' > /home/ubuntu/.env"
+            --parameters commands="echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\nDATABASE_USERNAME=dev_db_fnum_user\" > /home/ubuntu/.env"
 
       - name: Run Docker Image on EC2 Instance
         run: |
           set -e  # Exit on error
 
           # Use SSM to pull and run the Docker image
-          INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
