@@ -52,14 +52,11 @@ jobs:
         run: |
           set -e  # Exit on error
 
-          # Generate a unique key pair name
           KEY_PAIR_NAME="MyDynamicKey-$(date +%s)"
-
           echo "Creating EC2 Key Pair with name $KEY_PAIR_NAME..."
           KEY_MATERIAL=$(aws ec2 create-key-pair --key-name "$KEY_PAIR_NAME" --query 'KeyMaterial' --output text)
           echo "$KEY_MATERIAL" > "$KEY_PAIR_NAME.pem"
           chmod 400 "$KEY_PAIR_NAME.pem"
-          echo "Key pair generated and saved as $KEY_PAIR_NAME.pem"
           echo "::set-output name=key-file-path::$KEY_PAIR_NAME.pem"
           echo "::set-output name=key-name::$KEY_PAIR_NAME"
 
@@ -90,35 +87,45 @@ jobs:
           echo "::set-output name=instance-ip::$INSTANCE_IP"
           echo "::set-output name=instance-id::$INSTANCE_ID"
 
-      - name: Install Docker on EC2 Instance
+      - name: Install Docker on EC2 Instance via SSM
         run: |
           set -e  # Exit on error
 
-          # Use SSM to install Docker
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+
+          # Check that the instance is in a running state and SSM is available
+          aws ec2 wait instance-status-ok --instance-ids $INSTANCE_ID
+
+          # Use SSM to install Docker on the instance
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]'
+            --parameters commands='["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]' \
+            --comment "Install Docker on EC2 instance"
+
+          # Wait for command completion
+          aws ssm wait command-executed --instance-id $INSTANCE_ID
 
       - name: Create .env file on EC2 Instance
         run: |
           set -e  # Exit on error
 
-          # Use SSM to create .env file with database credentials
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+          
+          # Use SSM to create .env file with database credentials
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\\nDATABASE_USERNAME=dev_db_fnum_user\" | sudo tee /home/ubuntu/.env"]'
+            --parameters commands='["echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\\nDATABASE_USERNAME=dev_db_fnum_user\" | sudo tee /home/ubuntu/.env"]'
 
       - name: Run Docker Image on EC2 Instance
         run: |
           set -e  # Exit on error
 
-          # Use SSM to pull and run the Docker image
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+
+          # Use SSM to pull and run the Docker image
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo docker pull solomon11/testing:latest", "sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest"]'
+            --parameters commands='["sudo docker pull solomon11/testing:latest", "sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest"]'
