@@ -41,11 +41,11 @@ jobs:
         run: docker push solomon11/testing:latest
 
       - name: Configure AWS CLI
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: 'eu-north-1'  # Explicitly set region to match
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Create AWS EC2 Key Pair
         id: create_key_pair
@@ -61,8 +61,6 @@ jobs:
           chmod 400 MyDynamicKey.pem
 
           echo "Key pair generated and saved as MyDynamicKey.pem"
-
-          # Set output for later use
           echo "::set-output name=key-file-path::MyDynamicKey.pem"
 
       - name: Provision AWS EC2 Instance
@@ -75,8 +73,8 @@ jobs:
           
           # Create EC2 instance using the newly created Key Pair
           INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0c55b159cbfafe1f0 \
-            --instance-type t2.micro \
+            --image-id ${{ secrets.MY_APP_BASE_IMAGE }} \
+            --instance-type t3.micro \
             --key-name MyDynamicKey \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyEC2Instance}]' \
             --query 'Instances[0].InstanceId' \
