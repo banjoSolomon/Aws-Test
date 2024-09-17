@@ -89,23 +89,23 @@ jobs:
           echo "EC2 instance is running with IP: $INSTANCE_IP"
           echo "::set-output name=instance-ip::$INSTANCE_IP"
 
-      - name: Install Docker on EC2 Instance
+      - name: Install Docker and SSM Agent on EC2 Instance
         run: |
           set -e  # Exit on error
 
-          # Use SSM to install Docker
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+          # Use SSM to install Docker and SSM Agent
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-ip }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install docker.io -y"]'
+            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install -y docker.io unzip curl", "curl -O https://s3.amazonaws.com/amazon-ssm-${{ secrets.AWS_REGION }}/ubuntu_$(lsb_release -cs)/latest/amazon-ssm-agent.deb", "sudo dpkg -i amazon-ssm-agent.deb", "sudo systemctl start amazon-ssm-agent", "sudo systemctl enable amazon-ssm-agent"]'
 
       - name: Create .env file on EC2 Instance
         run: |
           set -e  # Exit on error
 
           # Use SSM to create .env file with database credentials
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-ip }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
@@ -116,7 +116,7 @@ jobs:
           set -e  # Exit on error
 
           # Use SSM to pull and run the Docker image
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-ip }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
