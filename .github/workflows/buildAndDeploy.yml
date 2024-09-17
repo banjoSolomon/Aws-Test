@@ -102,7 +102,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="sudo apt-get update -y && sudo apt-get install docker.io -y"
+            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install docker.io -y"]'
 
       - name: Create .env file on EC2 Instance
         run: |
@@ -113,7 +113,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\nDATABASE_USERNAME=dev_db_fnum_user\" > /home/ubuntu/.env"
+            --parameters 'commands=["echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\\nDATABASE_USERNAME=dev_db_fnum_user\" > /home/ubuntu/.env"]'
 
       - name: Run Docker Image on EC2 Instance
         run: |
@@ -124,4 +124,4 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="sudo docker pull solomon11/testing:latest && sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest"
+            --parameters 'commands=["sudo docker pull solomon11/testing:latest", "sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest"]'
