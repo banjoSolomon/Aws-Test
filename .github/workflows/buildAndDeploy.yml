@@ -51,31 +51,31 @@ jobs:
         id: create_key_pair
         run: |
           set -e  # Exit on error
-          
-          # Generate the key pair and save it to a file
-          echo "Creating EC2 Key Pair..."
-          KEY_MATERIAL=$(aws ec2 create-key-pair --key-name MyDynamicKey --query 'KeyMaterial' --output text)
-          echo "$KEY_MATERIAL" > MyDynamicKey.pem
-          
-          # Set correct permissions for the key file
-          chmod 400 MyDynamicKey.pem
 
-          echo "Key pair generated and saved as MyDynamicKey.pem"
-          echo "::set-output name=key-file-path::MyDynamicKey.pem"
+          # Generate a unique key pair name
+          KEY_PAIR_NAME="MyDynamicKey-$(date +%s)"
+
+          echo "Creating EC2 Key Pair with name $KEY_PAIR_NAME..."
+          KEY_MATERIAL=$(aws ec2 create-key-pair --key-name "$KEY_PAIR_NAME" --query 'KeyMaterial' --output text)
+          echo "$KEY_MATERIAL" > "$KEY_PAIR_NAME.pem"
+          chmod 400 "$KEY_PAIR_NAME.pem"
+          echo "Key pair generated and saved as $KEY_PAIR_NAME.pem"
+          echo "::set-output name=key-file-path::$KEY_PAIR_NAME.pem"
+          echo "::set-output name=key-name::$KEY_PAIR_NAME"
 
       - name: Provision AWS EC2 Instance
         id: provision_ec2
         run: |
           set -e  # Exit on error
-          
-          # Retrieve the saved key pair file
-          KEY_FILE_PATH=${{ steps.create_key_pair.outputs.key-file-path }}
-          
+
+          # Retrieve the key pair name from the previous step
+          KEY_PAIR_NAME=${{ steps.create_key_pair.outputs.key-name }}
+
           # Create EC2 instance using the newly created Key Pair
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ${{ secrets.MY_APP_BASE_IMAGE }} \
             --instance-type t3.micro \
-            --key-name MyDynamicKey \
+            --key-name "$KEY_PAIR_NAME" \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyEC2Instance}]' \
             --query 'Instances[0].InstanceId' \
             --output text)
@@ -96,7 +96,7 @@ jobs:
       - name: Install Docker on EC2 Instance
         run: |
           set -e  # Exit on error
-          
+
           # Use SSM to install Docker
           INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
           aws ssm send-command \
@@ -107,7 +107,7 @@ jobs:
       - name: Create .env file on EC2 Instance
         run: |
           set -e  # Exit on error
-          
+
           # Use SSM to create .env file with database credentials
           INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
           aws ssm send-command \
@@ -118,7 +118,7 @@ jobs:
       - name: Run Docker Image on EC2 Instance
         run: |
           set -e  # Exit on error
-          
+
           # Use SSM to pull and run the Docker image
           INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
           aws ssm send-command \
