@@ -83,10 +83,6 @@ jobs:
           # Wait until the instance is running
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID
 
-          # Allocate Elastic IP and associate it with the instance
-          ALLOCATION_ID=$(aws ec2 allocate-address --query 'AllocationId' --output text)
-          aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $ALLOCATION_ID
-
           # Get public IP of the instance
           INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 
