@@ -55,18 +55,12 @@ jobs:
           # Generate a unique key pair name
           KEY_PAIR_NAME="MyDynamicKey-$(date +%s)"
 
-          # Define the path to the Downloads directory
-          DOWNLOADS_DIR="/mnt/c/Users/${{ github.actor }}/Downloads"
-
           echo "Creating EC2 Key Pair with name $KEY_PAIR_NAME..."
           KEY_MATERIAL=$(aws ec2 create-key-pair --key-name "$KEY_PAIR_NAME" --query 'KeyMaterial' --output text)
-          echo "$KEY_MATERIAL" > "$DOWNLOADS_DIR/$KEY_PAIR_NAME.pem"
-          
-          # Set file permissions
-          chmod 400 "$DOWNLOADS_DIR/$KEY_PAIR_NAME.pem"
-
-          echo "Key pair generated and saved as $DOWNLOADS_DIR/$KEY_PAIR_NAME.pem"
-          echo "::set-output name=key-file-path::$DOWNLOADS_DIR/$KEY_PAIR_NAME.pem"
+          echo "$KEY_MATERIAL" > "$KEY_PAIR_NAME.pem"
+          chmod 400 "$KEY_PAIR_NAME.pem"
+          echo "Key pair generated and saved as $KEY_PAIR_NAME.pem"
+          echo "::set-output name=key-file-path::$KEY_PAIR_NAME.pem"
           echo "::set-output name=key-name::$KEY_PAIR_NAME"
 
       - name: Provision AWS EC2 Instance
