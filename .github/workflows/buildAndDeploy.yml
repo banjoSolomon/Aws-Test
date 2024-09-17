@@ -87,18 +87,19 @@ jobs:
           INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 
           echo "EC2 instance is running with IP: $INSTANCE_IP"
+          echo "::set-output name=instance-ip::$INSTANCE_IP"
           echo "::set-output name=instance-id::$INSTANCE_ID"
 
-      - name: Install Docker and SSM Agent on EC2 Instance
+      - name: Install Docker on EC2 Instance
         run: |
           set -e  # Exit on error
 
-          # Use SSM to install Docker and SSM Agent
+          # Use SSM to install Docker
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install -y docker.io unzip curl", "curl -O https://s3.amazonaws.com/amazon-ssm-${{ secrets.AWS_REGION }}/ubuntu_$(lsb_release -cs)/latest/amazon-ssm-agent.deb", "sudo dpkg -i amazon-ssm-agent.deb", "sudo systemctl start amazon-ssm-agent", "sudo systemctl enable amazon-ssm-agent"]'
+            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]'
 
       - name: Create .env file on EC2 Instance
         run: |
@@ -109,7 +110,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\\nDATABASE_USERNAME=dev_db_fnum_user\" > /home/ubuntu/.env"]'
+            --parameters 'commands=["echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\\nDATABASE_USERNAME=dev_db_fnum_user\" | sudo tee /home/ubuntu/.env"]'
 
       - name: Run Docker Image on EC2 Instance
         run: |
