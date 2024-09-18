@@ -13,32 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v2
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: maven
-
-      - name: Restore Maven Package
-        uses: actions/cache@v2
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('/*.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build Docker image
-        run: docker build -t solomon11/testing:latest .
-
-      - name: Push Docker image to Docker Hub
-        run: docker push solomon11/testing:latest
+      - name: Generate SSH Key Pair
+        id: generate_ssh_key
+        run: |
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+          echo "::set-output name=private-key::$(cat ~/.ssh/id_rsa)"
+          echo "::set-output name=public-key::$(cat ~/.ssh/id_rsa.pub)"
 
       - name: Configure AWS CLI
         uses: aws-actions/configure-aws-credentials@v1
@@ -52,113 +32,94 @@ jobs:
         run: |
           set -e  # Exit on error
 
+          # Retrieve the generated public key
+          PUBLIC_KEY=${{ steps.generate_ssh_key.outputs.public-key }}
+
+          # Create EC2 key pair using the public key
           KEY_PAIR_NAME="MyDynamicKey-$(date +%s)"
-          echo "Creating EC2 Key Pair with name $KEY_PAIR_NAME..."
-          KEY_MATERIAL=$(aws ec2 create-key-pair --key-name "$KEY_PAIR_NAME" --query 'KeyMaterial' --output text)
-          echo "$KEY_MATERIAL" > "$KEY_PAIR_NAME.pem"
-          chmod 400 "$KEY_PAIR_NAME.pem"
-          echo "::set-output name=key-file-path::$KEY_PAIR_NAME.pem"
+          aws ec2 import-key-pair --key-name "$KEY_PAIR_NAME" --public-key-material "$PUBLIC_KEY"
+
+          # Save private key to file
+          echo "${{ steps.generate_ssh_key.outputs.private-key }}" > private_key.pem
+          chmod 400 private_key.pem
+          echo "::set-output name=key-file-path::private_key.pem"
           echo "::set-output name=key-name::$KEY_PAIR_NAME"
+
+      - name: Create Security Group
+        id: create_security_group
+        run: |
+          set -e  # Exit on error
+
+          # Create a new security group
+          SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name MySecurityGroup --description "Allow SSH access" --query 'GroupId' --output text)
+
+          # Allow inbound SSH access
+          aws ec2 authorize-security-group-ingress --group-id "$SECURITY_GROUP_ID" --protocol tcp --port 22 --cidr 0.0.0.0/0
+
+          echo "Security Group ID: $SECURITY_GROUP_ID"
+          echo "::set-output name=security-group-id::$SECURITY_GROUP_ID"
 
       - name: Provision AWS EC2 Instance
         id: provision_ec2
         run: |
           set -e  # Exit on error
 
-          # Retrieve the key pair name from the previous step
           KEY_PAIR_NAME=${{ steps.create_key_pair.outputs.key-name }}
+          SECURITY_GROUP_ID=${{ steps.create_security_group.outputs.security-group-id }}
 
-          # Create EC2 instance using the newly created Key Pair
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ${{ secrets.MY_APP_BASE_IMAGE }} \
             --instance-type t3.micro \
             --key-name "$KEY_PAIR_NAME" \
+            --security-group-ids "$SECURITY_GROUP_ID" \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyEC2Instance}]' \
             --query 'Instances[0].InstanceId' \
             --output text)
 
-          # Wait until the instance is running
           aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 
-          # Get public IP of the instance
           INSTANCE_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 
           echo "EC2 instance is running with IP: $INSTANCE_IP"
           echo "::set-output name=instance-ip::$INSTANCE_IP"
           echo "::set-output name=instance-id::$INSTANCE_ID"
 
-      - name: Wait for EC2 Instance Initialization
-        run: sleep 120
-
-      - name: Verify SSM Agent Availability
+      - name: Install Docker on EC2 Instance via SSH
         run: |
           set -e  # Exit on error
 
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
-          
-          # Check if the instance is in a valid state
-          INSTANCE_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text)
-          if [ "$INSTANCE_STATE" != "running" ]; then
-            echo "EC2 instance is not in a running state. Current state: $INSTANCE_STATE"
-            exit 1
-          fi
+          INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
+          PRIVATE_KEY_PATH=${{ steps.create_key_pair.outputs.key-file-path }}
 
-          # Ensure SSM is available for the instance
-          SSM_STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
-          if [ "$SSM_STATUS" != "Online" ]; then
-            echo "SSM is not available on the instance. Ensure SSM agent is installed and running."
-            exit 1
-          else
-            echo "SSM is online."
-          fi
+          # Use SSH to install Docker on the instance
+          ssh -i "$PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" << 'EOF'
+            sudo apt-get update -y
+            sudo apt-get install docker.io -y
+            sudo systemctl start docker
+            sudo systemctl enable docker
+          EOF
 
-      - name: Install Docker on EC2 Instance via SSM
+      - name: Create .env file on EC2 Instance via SSH
         run: |
           set -e  # Exit on error
 
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+          INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
+          PRIVATE_KEY_PATH=${{ steps.create_key_pair.outputs.key-file-path }}
 
-          # Use SSM to install Docker on the instance
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]' \
-            --query 'Command.CommandId' \
-            --output text)
+          # Use SSH to create .env file with database credentials
+          ssh -i "$PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" << 'EOF'
+            echo -e "DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\nDATABASE_USERNAME=dev_db_fnum_user" | sudo tee /home/ubuntu/.env
+          EOF
 
-          # Wait for command completion
-          aws ssm wait command-executed --instance-id "$INSTANCE_ID" --command-id "$COMMAND_ID"
-
-      - name: Create .env file on EC2 Instance
+      - name: Run Docker Image on EC2 Instance via SSH
         run: |
           set -e  # Exit on error
 
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
+          INSTANCE_IP=${{ steps.provision_ec2.outputs.instance-ip }}
+          PRIVATE_KEY_PATH=${{ steps.create_key_pair.outputs.key-file-path }}
 
-          # Use SSM to create .env file with database credentials
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters commands='["echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\\nDATABASE_USERNAME=dev_db_fnum_user\" | sudo tee /home/ubuntu/.env"]' \
-            --query 'Command.CommandId' \
-            --output text)
-
-          # Wait for command completion
-          aws ssm wait command-executed --instance-id "$INSTANCE_ID" --command-id "$COMMAND_ID"
-
-      - name: Run Docker Image on EC2 Instance
-        run: |
-          set -e  # Exit on error
-
-          INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
-
-          # Use SSM to pull and run the Docker image
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters commands='["sudo docker pull solomon11/testing:latest", "sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest"]' \
-            --query 'Command.CommandId' \
-            --output text)
-
-          # Wait for command completion
-          aws ssm wait command-executed --instance-id "$INSTANCE_ID" --command-id "$COMMAND_ID"
+          # Use SSH to pull and run the Docker image
+          ssh -i "$PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" << 'EOF'
+            sudo docker pull solomon11/testing:latest
+            sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest
+          EOF
