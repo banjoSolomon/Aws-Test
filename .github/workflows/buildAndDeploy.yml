@@ -87,35 +87,29 @@ jobs:
           echo "::set-output name=instance-ip::$INSTANCE_IP"
           echo "::set-output name=instance-id::$INSTANCE_ID"
 
-      - name: Wait for SSM agent to be available
-        run: sleep 60
+      - name: Wait for EC2 Instance Initialization
+        run: sleep 120
 
-      - name: Install SSM Agent on EC2 Instance
+      - name: Verify SSM Agent Availability
         run: |
           set -e  # Exit on error
 
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
-
-          # Ensure the instance is running
-          aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
+          
+          # Check if the instance is in a valid state
+          INSTANCE_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text)
+          if [ "$INSTANCE_STATE" != "running" ]; then
+            echo "EC2 instance is not in a running state. Current state: $INSTANCE_STATE"
+            exit 1
+          fi
 
           # Ensure SSM is available for the instance
           SSM_STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
           if [ "$SSM_STATUS" != "Online" ]; then
-            echo "SSM is not available on the instance. Installing SSM agent..."
-
-            # Use SSM to install the SSM agent
-            COMMAND_ID=$(aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install amazon-ssm-agent -y", "sudo systemctl start amazon-ssm-agent", "sudo systemctl enable amazon-ssm-agent"]' \
-              --query 'Command.CommandId' \
-              --output text)
-
-            # Wait for command completion
-            aws ssm wait command-executed --instance-id "$INSTANCE_ID" --command-id "$COMMAND_ID"
+            echo "SSM is not available on the instance. Ensure SSM agent is installed and running."
+            exit 1
           else
-            echo "SSM is already available on the instance."
+            echo "SSM is online."
           fi
 
       - name: Install Docker on EC2 Instance via SSM
@@ -123,13 +117,6 @@ jobs:
           set -e  # Exit on error
 
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
-
-          # Ensure SSM is available for the instance
-          SSM_STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
-          if [ "$SSM_STATUS" != "Online" ]; then
-            echo "SSM is not available on the instance. Ensure SSM agent is installed and running."
-            exit 1
-          fi
 
           # Use SSM to install Docker on the instance
           COMMAND_ID=$(aws ssm send-command \
