@@ -93,6 +93,9 @@ jobs:
 
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
 
+          # Wait for the instance to reach running state
+          aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
+
           # Ensure SSM is available for the instance
           SSM_STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
           if [ "$SSM_STATUS" != "Online" ]; then
@@ -108,6 +111,8 @@ jobs:
 
             # Wait for command completion
             aws ssm wait command-executed --instance-id "$INSTANCE_ID" --command-id "$COMMAND_ID"
+          else
+            echo "SSM is already available on the instance."
           fi
 
       - name: Install Docker on EC2 Instance via SSM
@@ -115,9 +120,6 @@ jobs:
           set -e  # Exit on error
 
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
-
-          # Wait for the instance to reach running state
-          aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
 
           # Ensure SSM is available for the instance
           SSM_STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
