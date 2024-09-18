@@ -97,7 +97,7 @@ jobs:
           aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
 
           # Ensure SSM is available for the instance
-          SSM_STATUS=$(aws ssm describe-instance-information --instance-ids "$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
+          SSM_STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
           if [ "$SSM_STATUS" != "Online" ]; then
             echo "SSM is not available on the instance. Ensure SSM agent is installed and running."
             exit 1
@@ -107,7 +107,7 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters commands='["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]' \
+            --parameters 'commands=["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]' \
             --query 'Command.CommandId' \
             --output text)
 
