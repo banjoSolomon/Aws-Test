@@ -36,6 +36,9 @@ jobs:
           # Retrieve and format the public key
           PUBLIC_KEY=$(echo "${{ steps.generate_ssh_key.outputs.public-key }}" | tr -d '\n')
 
+          # Debug output
+          echo "Public Key: $PUBLIC_KEY"
+
           # Ensure public key is ASCII only
           if echo "$PUBLIC_KEY" | grep -q "[^\x00-\x7F]"; then
             echo "Public key contains non-ASCII characters. Exiting."
