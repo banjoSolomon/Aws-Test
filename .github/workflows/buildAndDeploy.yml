@@ -78,10 +78,10 @@ jobs:
             --output text)
 
           # Wait until the instance is running
-          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 
           # Get public IP of the instance
-          INSTANCE_IP=$(aws ec2 describe-instances --instance-id $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+          INSTANCE_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 
           echo "EC2 instance is running with IP: $INSTANCE_IP"
           echo "::set-output name=instance-ip::$INSTANCE_IP"
@@ -94,10 +94,10 @@ jobs:
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
 
           # Wait for the instance to reach running state
-          aws ec2 wait instance-status-ok --instance-ids $INSTANCE_ID
+          aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
 
           # Ensure SSM is available for the instance
-          SSM_STATUS=$(aws ssm describe-instance-information --instance-id $INSTANCE_ID --query 'InstanceInformationList[0].PingStatus' --output text)
+          SSM_STATUS=$(aws ssm describe-instance-information --instance-ids "$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
           if [ "$SSM_STATUS" != "Online" ]; then
             echo "SSM is not available on the instance. Ensure SSM agent is installed and running."
             exit 1
@@ -105,13 +105,13 @@ jobs:
 
           # Use SSM to install Docker on the instance
           aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --parameters commands='["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]' \
             --comment "Install Docker on EC2 instance"
           
           # Wait for command completion
-          aws ssm wait command-executed --instance-id $INSTANCE_ID
+          aws ssm wait command-executed --instance-id "$INSTANCE_ID"
 
       - name: Create .env file on EC2 Instance
         run: |
@@ -121,7 +121,7 @@ jobs:
           
           # Use SSM to create .env file with database credentials
           aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --parameters commands='["echo -e \"DATABASE_PASSWORD=nO42mUEPFHVhP7vycanCnSDM8PqbmK3t\\nDATABASE_URL=jdbc:postgresql://dpg-cr7hlkqj1k6c739sin10-a.oregon-postgres.render.com/dev_db_fnum\\nDATABASE_USERNAME=dev_db_fnum_user\" | sudo tee /home/ubuntu/.env"]'
 
@@ -133,6 +133,6 @@ jobs:
 
           # Use SSM to pull and run the Docker image
           aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --parameters commands='["sudo docker pull solomon11/testing:latest", "sudo docker run -d --env-file=/home/ubuntu/.env --name solomon-class-container solomon11/testing:latest"]'
