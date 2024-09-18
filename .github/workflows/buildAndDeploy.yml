@@ -87,13 +87,16 @@ jobs:
           echo "::set-output name=instance-ip::$INSTANCE_IP"
           echo "::set-output name=instance-id::$INSTANCE_ID"
 
+      - name: Wait for SSM agent to be available
+        run: sleep 60
+
       - name: Install SSM Agent on EC2 Instance
         run: |
           set -e  # Exit on error
 
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
 
-          # Wait for the instance to reach running state
+          # Ensure the instance is running
           aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
 
           # Ensure SSM is available for the instance
@@ -144,7 +147,7 @@ jobs:
           set -e  # Exit on error
 
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
-          
+
           # Use SSM to create .env file with database credentials
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
