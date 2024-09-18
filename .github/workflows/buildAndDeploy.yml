@@ -16,6 +16,7 @@ jobs:
       - name: Generate SSH Key Pair
         id: generate_ssh_key
         run: |
+          set -e  # Exit on error
           ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           echo "::set-output name=private-key::$(cat ~/.ssh/id_rsa)"
           echo "::set-output name=public-key::$(cat ~/.ssh/id_rsa.pub)"
@@ -32,9 +33,9 @@ jobs:
         run: |
           set -e  # Exit on error
 
-          # Retrieve the generated public key
-          PUBLIC_KEY=${{ steps.generate_ssh_key.outputs.public-key }}
-
+          # Retrieve the generated public key and format it
+          PUBLIC_KEY=$(echo "${{ steps.generate_ssh_key.outputs.public-key }}" | tr -d '\n')
+          
           # Create EC2 key pair using the public key
           KEY_PAIR_NAME="MyDynamicKey-$(date +%s)"
           aws ec2 import-key-pair --key-name "$KEY_PAIR_NAME" --public-key-material "$PUBLIC_KEY"
