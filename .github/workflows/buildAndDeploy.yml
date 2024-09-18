@@ -93,8 +93,15 @@ jobs:
 
           INSTANCE_ID=${{ steps.provision_ec2.outputs.instance-id }}
 
-          # Check that the instance is in a running state and SSM is available
+          # Wait for the instance to reach running state
           aws ec2 wait instance-status-ok --instance-ids $INSTANCE_ID
+
+          # Ensure SSM is available for the instance
+          SSM_STATUS=$(aws ssm describe-instance-information --instance-id $INSTANCE_ID --query 'InstanceInformationList[0].PingStatus' --output text)
+          if [ "$SSM_STATUS" != "Online" ]; then
+            echo "SSM is not available on the instance. Ensure SSM agent is installed and running."
+            exit 1
+          fi
 
           # Use SSM to install Docker on the instance
           aws ssm send-command \
@@ -102,7 +109,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters commands='["sudo apt-get update -y", "sudo apt-get install docker.io -y", "sudo systemctl start docker", "sudo systemctl enable docker"]' \
             --comment "Install Docker on EC2 instance"
-
+          
           # Wait for command completion
           aws ssm wait command-executed --instance-id $INSTANCE_ID
 
